@@ -489,7 +489,7 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
         val slaveId = offer.getSlaveId.getValue
         val offerId = offer.getId.getValue
         val resources = remainingResources(offerId)
-        val maxRetries = sc.conf.getOption("spark.port.maxRetries").map(_.toInt).getOrElse(16)
+        val maxRetries = Utils.portMaxRetries(sc.conf)
 
         if (canLaunchTask(slaveId, offer.getHostname, resources, maxRetries)) {
           // Create a task

@@ -183,7 +183,7 @@ class MesosSchedulerUtilsSuite extends SparkFunSuite with Matchers with MockitoS
     val portResource = createTestPortResource((3000, 5000), Some("my_role"))
 
     val (resourcesLeft, resourcesToBeUsed) = utils
-      .partitionPortResources(List(4000), List(portResource), 16)
+      .partitionPortResources(List(4000), List(portResource), org.apache.spark.util.Utils.portMaxRetries(conf))
     resourcesToBeUsed.length shouldBe 1
 
     val portsToUse = getRangesFromResources(resourcesToBeUsed).map{r => r._1}.toArray
@@ -204,7 +204,7 @@ class MesosSchedulerUtilsSuite extends SparkFunSuite with Matchers with MockitoS
     val portResource = createTestPortResource((4001, 5000), Some("my_role"))
 
     val (resourcesLeft, resourcesToBeUsed) = utils
-      .partitionPortResources(List(4000), List(portResource), 16)
+      .partitionPortResources(List(4000), List(portResource), org.apache.spark.util.Utils.portMaxRetries(conf))
     resourcesToBeUsed.length shouldBe 1
 
     val portsToUse = getRangesFromResources(resourcesToBeUsed).map{r => r._1}.toArray
@@ -224,7 +224,7 @@ class MesosSchedulerUtilsSuite extends SparkFunSuite with Matchers with MockitoS
     val portResource = createTestPortResource((3000L, 5000L), Some("my_role"))
 
     val (resourcesLeft, resourcesToBeUsed) = utils
-      .partitionPortResources(List(), List(portResource), 16)
+      .partitionPortResources(List(), List(portResource), org.apache.spark.util.Utils.portMaxRetries(conf))
     val portsToUse = getRangesFromResources(resourcesToBeUsed).map{r => r._1}
 
     portsToUse.isEmpty shouldBe true
@@ -236,7 +236,7 @@ class MesosSchedulerUtilsSuite extends SparkFunSuite with Matchers with MockitoS
     val portResourceList = List(createTestPortResource((3000, 5000), Some("my_role")),
       createTestPortResource((2000, 2500), Some("other_role")))
     val (resourcesLeft, resourcesToBeUsed) = utils
-      .partitionPortResources(List(4000), portResourceList, 16)
+      .partitionPortResources(List(4000), portResourceList, org.apache.spark.util.Utils.portMaxRetries(conf))
     val portsToUse = getRangesFromResources(resourcesToBeUsed).map{r => r._1}
 
     portsToUse.length shouldBe 1
@@ -254,7 +254,7 @@ class MesosSchedulerUtilsSuite extends SparkFunSuite with Matchers with MockitoS
     val portResourceList = List(createTestPortResource((3000, 5000), Some("my_role")),
       createTestPortResource((2000, 2500), Some("other_role")))
     val (resourcesLeft, resourcesToBeUsed) = utils
-      .partitionPortResources(List(), portResourceList, 16)
+      .partitionPortResources(List(), portResourceList, org.apache.spark.util.Utils.portMaxRetries(conf))
     val portsToUse = getRangesFromResources(resourcesToBeUsed).map{r => r._1}
     portsToUse.isEmpty shouldBe true
   }
