@@ -412,17 +412,21 @@ trait MesosSchedulerUtils extends Logging {
    * @param ports the list of ports to check
    * @return true if ports are within range false otherwise
    */
-  protected def checkPorts(conf: SparkConf, ports: List[(Long, Long)]): Boolean = {
+  protected def checkPorts(conf: SparkConf, ports: List[(Long, Long)], maxRetries: Int): Boolean = {
 
-    def checkIfInRange(port: Long, ps: List[(Long, Long)]): Boolean = {
-      ps.exists{case (rangeStart, rangeEnd) => rangeStart <= port & rangeEnd >= port }
+    def checkIfInRange(portToTry: Long, ps: List[(Long, Long)]): Boolean = {
+      (portToTry to portToTry + maxRetries).foldLeft(false) {
+        (result, port) => result || ps.exists {
+          case (rangeStart, rangeEnd) => rangeStart <= port && rangeEnd >= port
+        }
+      }
     }
-
     val portsToCheck = nonZeroPortValuesFromConfig(conf)
     val withinRange = portsToCheck.forall(p => checkIfInRange(p, ports))
     // make sure we have enough ports to allocate per offer
-    val enoughPorts =
-    ports.map{case (rangeStart, rangeEnd) => rangeEnd - rangeStart + 1}.sum >= portsToCheck.size
+    val enoughPorts = ports.map {
+      case (rangeStart, rangeEnd) => rangeEnd - rangeStart + 1
+    }.sum >= portsToCheck.size
     enoughPorts && withinRange
   }
 
@@ -433,7 +437,9 @@ trait MesosSchedulerUtils extends Logging {
    * @param offeredResources the resources offered
    * @return resources left, port resources to be used.
    */
-  def partitionPortResources(requestedPorts: List[Long], offeredResources: List[Resource])
+  def partitionPortResources(requestedPorts: List[Long],
+                             offeredResources: List[Resource],
+                             maxRetries: Int)
     : (List[Resource], List[Resource]) = {
     if (requestedPorts.isEmpty) {
       (offeredResources, List[Resource]())
@@ -442,7 +448,7 @@ trait MesosSchedulerUtils extends Logging {
       val (resourcesWithoutPorts, portResources) = filterPortResources(offeredResources)
 
       val portsAndResourceInfo = requestedPorts.
-        map { x => (x, findPortAndGetAssignedResourceInfo(x, portResources)) }
+        map { x => findPortAndGetAssignedResourceInfo(x, portResources, maxRetries) }
 
       val assignedPortResources = createResourcesFromPorts(portsAndResourceInfo)
 
@@ -501,21 +507,33 @@ trait MesosSchedulerUtils extends Logging {
   * Helper to assign a port to an offered range and get the latter's role
   * info to use it later on.
   */
-  private def findPortAndGetAssignedResourceInfo(port: Long, portResources: List[Resource])
-    : RoleResourceInfo = {
+  private def findPortAndGetAssignedResourceInfo(port: Long, portResources: List[Resource],
+                                                 maxRetries: Int): (Long, RoleResourceInfo) = {
 
-    val ranges = portResources.
+    val ranges: List[(RoleResourceInfo, List[(Long, Long)])] = portResources.
       map { resource =>
         val reservation = getReservation(resource)
         (RoleResourceInfo(resource.getRole, reservation),
           resource.getRanges.getRangeList.asScala.map(r => (r.getBegin, r.getEnd)).toList)
       }
 
-    val rangePortResourceInfo = ranges
-      .find { case (resourceInfo, rangeList) => rangeList
-        .exists{ case (rangeStart, rangeEnd) => rangeStart <= port & rangeEnd >= port}}
+    @scala.annotation.tailrec
+    def findRangePortResourceInfo(portToTry: Long): (Long, Option[(RoleResourceInfo, List[(Long, Long)])]) = {
+      (ranges.find {
+        case (resourceInfo, rangeList) =>
+          rangeList.exists {
+            case (rangeStart, rangeEnd) => rangeStart <= portToTry && rangeEnd >= portToTry
+          }
+      }) match {
+        case None if portToTry < port + maxRetries => findRangePortResourceInfo(portToTry + 1)
+        case None => (port, None)
+        case result => (portToTry, result)
+      }
+    }
+
     // this is safe since we have previously checked about the ranges (see checkPorts method)
-    rangePortResourceInfo.map{ case (resourceInfo, rangeList) => resourceInfo}.get
+    val (freePort, rangePortResourceInfo) = findRangePortResourceInfo(port)
+    (freePort, rangePortResourceInfo.map{ case (resourceInfo, _) => resourceInfo}.get)
   }
 
   /** Retrieves the port resources from a list of mesos offered resources */

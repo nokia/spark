@@ -489,8 +489,9 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
         val slaveId = offer.getSlaveId.getValue
         val offerId = offer.getId.getValue
         val resources = remainingResources(offerId)
+        val maxRetries = Utils.portMaxRetries(sc.conf)
 
-        if (canLaunchTask(slaveId, offer.getHostname, resources)) {
+        if (canLaunchTask(slaveId, offer.getHostname, resources, maxRetries)) {
           // Create a task
           launchTasks = true
           val taskId = newMesosTaskId()
@@ -504,7 +505,7 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
           slaves.getOrElseUpdate(slaveId, new Slave(offer.getHostname)).taskIDs.add(taskId)
 
           val (resourcesLeft, resourcesToUse) =
-            partitionTaskResources(resources, taskCPUs, taskMemory, taskGPUs)
+            partitionTaskResources(resources, taskCPUs, taskMemory, taskGPUs, maxRetries)
 
           val taskBuilder = MesosTaskInfo.newBuilder()
             .setTaskId(TaskID.newBuilder().setValue(taskId.toString).build())
@@ -537,7 +538,8 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
       resources: JList[Resource],
       taskCPUs: Int,
       taskMemory: Int,
-      taskGPUs: Int)
+      taskGPUs: Int,
+      maxRetries: Int)
     : (List[Resource], List[Resource]) = {
 
     // partition cpus & mem
@@ -551,20 +553,20 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
     // on the same host. This essentially means one executor per host.
     // TODO: handle network isolator case
     val (nonPortResources, portResourcesToUse) =
-      partitionPortResources(nonZeroPortValuesFromConfig(sc.conf), afterGPUResources)
+      partitionPortResources(nonZeroPortValuesFromConfig(sc.conf), afterGPUResources, maxRetries)
 
     (nonPortResources,
       cpuResourcesToUse ++ memResourcesToUse ++ portResourcesToUse ++ gpuResourcesToUse)
   }
 
   private def canLaunchTask(slaveId: String, offerHostname: String,
-                            resources: JList[Resource]): Boolean = {
+                            resources: JList[Resource], maxRetries: Int): Boolean = {
     val offerMem = getResource(resources, "mem")
     val offerCPUs = getResource(resources, "cpus").toInt
     val cpus = executorCores(offerCPUs)
     val mem = executorMemory(sc)
     val ports = getRangeResource(resources, "ports")
-    val meetsPortRequirements = checkPorts(sc.conf, ports)
+    val meetsPortRequirements = checkPorts(sc.conf, ports, maxRetries)
 
     cpus > 0 &&
       cpus <= offerCPUs &&
